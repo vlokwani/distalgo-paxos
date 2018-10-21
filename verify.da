@@ -1,0 +1,38 @@
+
+class Verifier(process):    # Class to check for correctness verification
+    def setup(n_learners:int):
+        self.learnt_value = None
+        self.ballot_number = None
+        self.safety_verification = False
+  
+    def is_correct(value):
+        if learnt_value == None:
+            learnt_value = value
+        
+        safety_verification = value == learnt_value
+    
+    def receive(msg=('learnt', ballot_number, value, acceptor), from_=learner):
+        output("The value {} from ballot {} was learnt by the learner: {} from acceptor {}".format(
+            value, ballot_number, learner, acceptor
+        ))
+        is_correct(value)
+    
+    def run():
+
+        output(setof(a, received(('accepted', _, _, _), from_=a)))
+
+        await(len(
+            setof(l, received(('learnt', _, _, a), from_=l))
+        ) >= n_learners)        
+                                # This will not allow the program to terminate 
+                                # if we don't receive one 'learnt' message
+                                # from each learner that we'll have in the system
+        if safety_verification: 
+            output("Verification Finished. Safety {}".format(
+                "Validated" if safety_verification else "Invalidated"
+            ))
+            print("The value {} was learnt by all learners successfully!!!".format(
+                learnt_value
+            ))
+        else:
+            raise Exception("Safety Violated!!! Learners learnt different values")
