@@ -1,52 +1,70 @@
 import sys
 from random import randint
 from time import sleep
-TIMEOUT = 1
+from verify import Verifier
+import controller
 
-class Proposer(process):
-    def setup(acceptors:set):
+TIMEOUT = 10
+
+def is_sent(MESSAGE_LOSS): 
+    if MESSAGE_LOSS in (0.0, 1.0):
+        return not MESSAGE_LOSS
+    return randint(1, int(1/MESSAGE_LOSS)) != 1
+
+class Proposer(process, controller.Controllee):
+    def setup(ctl, acceptors:set, r:float, d:int, w:int, tp:int):
+        super().setup(ctl)
         self.n = None              # proposal number
         self.majority = acceptors  # majority of acceptors; all in other papers
 
     def to_consent():
         n = (0, self) if n == None else (n[0]+1, self)  # pick a prop num
-        send(('prepare', n), to= majority)
+        if is_sent(r): 
+            sleep(randint(0, d))
+            send(('prepare', n), to= majority)
         if await(len(setof(a, received(('respond', _n, _), from_ =a)))
                  > len(acceptors)/2):
             v = anyof(setof(v, received(('respond', _n, (n2, v))),
                             n2==max(setof(n2, received(('respond', _n, (n2, _))))))
                       or {randint(1,100)})  # any value, pick in 1..100
             responded = setof(a, received(('respond', _n, _), from_ =a))
-            send(('accept', n, v), to= responded)
+            if is_sent(r): 
+                sleep(randint(0, d))
+                send(('accept', n, v), to= responded)
             debug('### chose', n, v)
         elif some(received(('preempted', n2)), has= n2 > n):
             n = n2
-        elif timeout(TIMEOUT):
+        elif timeout(tp):
             output('failed proposal number', n)
-            
 
+    @controller.run            
     def run():
         while not received(('done',)):
-            sleep(TIMEOUT)
+            sleep(w)
             to_consent()
         output('terminating')
 
     def anyof(s):
         return next(iter(s)) if s else None
 
-class Acceptor(process):
-    def setup(learners:set): pass
+class Acceptor(process, controller.Controllee):
+    def setup(ctl, learners:set, r:float, d:int): 
+        super().setup(ctl)
 
     def receive(msg= ('prepare', n), from_= p):
         if each(sent(('respond', n2, _)), has= n > n2):
             maxprop = anyof(setof((n, v), sent(('accepted', n, v)),
                                n==max(setof(n, sent(('accepted', n, _))))))
-            send(('respond', n, maxprop), to =p)
+            if is_sent(r): 
+                sleep(randint(0, d))
+                send(('respond', n, maxprop), to =p)
         else:
             msg_set = setof(n2, sent(('respond', n2, _)))
             # output("Printing the message set", msg_set)
             maxprop = max(msg_set)
-            send(('preempted', maxprop), to=p)
+            if is_sent(r): 
+                sleep(randint(0, d))
+                send(('preempted', maxprop), to=p)
 
     def receive(msg= ('accept', n, v), from_=p):
         if not some(sent(('respond', n2, _)), has= n2 > n):
@@ -54,8 +72,11 @@ class Acceptor(process):
         else:
             msg_set = setof(n2, sent(('respond', n2, _)))
             maxprop = max(msg_set)
-            send(('preempted', maxprop), to=p)
-
+            if is_sent(r): 
+                sleep(randint(0, d))
+                send(('preempted', maxprop), to=p)
+    
+    @controller.run
     def run():
         await(received(('done',)))
         output('terminating')
@@ -64,8 +85,10 @@ class Acceptor(process):
         """return any element of set s if s is not empty or 'None' otherwise"""
         return next(iter(s)) if s else None
 
+
 class Learner(process):
-    def setup(acceptors:set): pass
+    def setup(acceptors:set, verifier:set, r:float, d:int, tl:int): 
+        pass
 
     def learn():
         if await(some(received(('accepted', n, v)),
@@ -73,28 +96,47 @@ class Learner(process):
                            > len(acceptors)/2)):
             output('learned', n, v)
 
-        elif timeout(TIMEOUT * 10):
+        elif timeout(tl * 10):
             output('failed learning anything')
+
+    def receive(msg=('accepted', n, v), from_= a):
+        output("Receive accepted")
+        send(('learnt', n, v, a), to=verifier)
 
     def run():
         learn()
         output('terminating')
-        send(('learned', ), to=nodeof(self))
+        if is_sent(r): 
+            sleep(randint(0, d))
+            send(('learned', ), to=nodeof(self))
+
 
 def main():
     nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
     nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 5
     nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+    n = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+    r = float(sys.argv[5]) if len(sys.argv) > 5 else 0
+    d = int(sys.argv[6]) if len(sys.argv) > 6 else 0
+    w = int(sys.argv[7]) if len(sys.argv) > 7 else TIMEOUT
+    tp = int(sys.argv[8]) if len(sys.argv) > 8 else max(d, TIMEOUT)
+    tl = int(sys.argv[9]) if len(sys.argv) > 9 else max(d, TIMEOUT)
 
-    acceptors = new(Acceptor, num= nacceptors)
-    proposers = new(Proposer, (acceptors,), num= nproposers)
-    learners = new(Learner, (acceptors,), num= nlearners)
-    for p in acceptors: setup(p, (learners,))
-    start(acceptors | proposers | learners)
+    for i in range(n):    
+        ctl = new(controller.Controller, num=1)
+        setup(ctl, (nacceptors + nproposers,))
+        start(ctl)
 
-    await(each(l in learners, has=received(('learned',), from_=l)))
-    output('done')
-    send(('done',), to= (acceptors|proposers))
+        verifiers = new(Verifier, (nlearners,), num=1)
+        acceptors = new(Acceptor, num= nacceptors)
+        proposers = new(Proposer, (ctl, acceptors, r, d, w, tp), num= nproposers)
+        learners = new(Learner, (acceptors, verifiers, r, d, tl), num= nlearners)
+        for p in acceptors: setup(p, (ctl, learners, r, d))
+        start(verifiers | acceptors | proposers | learners)
+
+        await(each(l in learners, has=received(('learned',), from_=l)))
+        output('done')
+        send(('done',), to= (acceptors|proposers))
 
 # This is an executable specification of the algorithm described in
 # Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
