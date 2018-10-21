@@ -1,5 +1,6 @@
 import sys
 from random import randint
+from time import sleep
 TIMEOUT = 1
 
 class Proposer(process):
@@ -10,7 +11,6 @@ class Proposer(process):
     def to_consent():
         n = (0, self) if n == None else (n[0]+1, self)  # pick a prop num
         send(('prepare', n), to= majority)
-
         if await(len(setof(a, received(('respond', _n, _), from_ =a)))
                  > len(acceptors)/2):
             v = anyof(setof(v, received(('respond', _n, (n2, v))),
@@ -19,12 +19,15 @@ class Proposer(process):
             responded = setof(a, received(('respond', _n, _), from_ =a))
             send(('accept', n, v), to= responded)
             debug('### chose', n, v)
-
+        elif some(received(('preempted', n2)), has= n2 > n):
+            n = n2
         elif timeout(TIMEOUT):
             output('failed proposal number', n)
+            
 
     def run():
         while not received(('done',)):
+            sleep(TIMEOUT)
             to_consent()
         output('terminating')
 
@@ -39,10 +42,19 @@ class Acceptor(process):
             maxprop = anyof(setof((n, v), sent(('accepted', n, v)),
                                n==max(setof(n, sent(('accepted', n, _))))))
             send(('respond', n, maxprop), to =p)
+        else:
+            msg_set = setof(n2, sent(('respond', n2, _)))
+            # output("Printing the message set", msg_set)
+            maxprop = max(msg_set)
+            send(('preempted', maxprop), to=p)
 
-    def receive(msg= ('accept', n, v)):
+    def receive(msg= ('accept', n, v), from_=p):
         if not some(sent(('respond', n2, _)), has= n2 > n):
             send(('accepted', n, v), to= learners)
+        else:
+            msg_set = setof(n2, sent(('respond', n2, _)))
+            maxprop = max(msg_set)
+            send(('preempted', maxprop), to=p)
 
     def run():
         await(received(('done',)))
