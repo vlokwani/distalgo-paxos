@@ -4,7 +4,7 @@ from time import sleep
 from verify import Verifier
 import controller
 
-TIMEOUT = 10
+TIMEOUT = 1
 
 def is_sent(MESSAGE_LOSS): 
     if MESSAGE_LOSS in (0.0, 1.0):
@@ -32,7 +32,7 @@ class Proposer(process, controller.Controllee):
                 sleep(randint(0, d))
                 send(('accept', n, v), to= responded)
             debug('### chose', n, v)
-        elif some(received(('preempted', n2)), has= n2 > n):
+        elif some(received(('preempted', n2)), has= n2 > n):            
             n = n2
         elif timeout(tp):
             output('failed proposal number', n)
@@ -59,7 +59,7 @@ class Acceptor(process, controller.Controllee):
                 sleep(randint(0, d))
                 send(('respond', n, maxprop), to =p)
         else:
-            msg_set = setof(n2, sent(('respond', n2, _)))
+            msg_set = setof(n2, sent(('respond', n2, _)))|setof(n3, sent(('accepted', n3, _)))
             # output("Printing the message set", msg_set)
             maxprop = max(msg_set)
             if is_sent(r): 
@@ -69,12 +69,6 @@ class Acceptor(process, controller.Controllee):
     def receive(msg= ('accept', n, v), from_=p):
         if not some(sent(('respond', n2, _)), has= n2 > n):
             send(('accepted', n, v), to= learners)
-        else:
-            msg_set = setof(n2, sent(('respond', n2, _)))
-            maxprop = max(msg_set)
-            if is_sent(r): 
-                sleep(randint(0, d))
-                send(('preempted', maxprop), to=p)
     
     @controller.run
     def run():
@@ -112,11 +106,11 @@ class Learner(process):
 
 
 def main():
-    nacceptors = int(sys.argv[1]) if len(sys.argv) > 1 else 3
-    nproposers = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+    nproposers = int(sys.argv[1]) if len(sys.argv) > 1 else 5
+    nacceptors = int(sys.argv[2]) if len(sys.argv) > 2 else 3
     nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
     n = int(sys.argv[4]) if len(sys.argv) > 4 else 1
-    r = float(sys.argv[5]) if len(sys.argv) > 5 else 0
+    r = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
     d = int(sys.argv[6]) if len(sys.argv) > 6 else 0
     w = int(sys.argv[7]) if len(sys.argv) > 7 else TIMEOUT
     tp = int(sys.argv[8]) if len(sys.argv) > 8 else max(d, TIMEOUT)
