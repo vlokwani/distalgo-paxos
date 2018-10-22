@@ -12,9 +12,9 @@ class Verifier(process):    # Class to check for correctness verification
         safety_verification = value == learnt_value
     
     def receive(msg=('learnt', ballot_number, value, acceptor), from_=learner):
-        output("The value {} from ballot {} was learnt by the learner: {} from acceptor {}".format(
-            value, ballot_number, learner, acceptor
-        ))
+        # output("The value {} from ballot {} was learnt by the learner: {} from acceptor {}".format(
+        #     value, ballot_number, learner, acceptor
+        # ))
         is_correct(value)
     
     def run():
@@ -28,9 +28,9 @@ class Verifier(process):    # Class to check for correctness verification
                                 # if we don't receive one 'learnt' message
                                 # from each learner that we'll have in the system
         if safety_verification: 
-            output("Verification Finished. Safety {}".format(
-                "Validated" if safety_verification else "Invalidated"
-            ))
+            # output("Verification Finished. Safety {}".format(
+            #     "Validated" if safety_verification else "Invalidated"
+            # ))
             print("The value {} was learnt by all learners successfully!!!".format(
                 learnt_value
             ))
