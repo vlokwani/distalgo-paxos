@@ -1,0 +1,28 @@
+import subprocess
+import json
+
+cmd = ['python', '-m', 'da', 'main.da']
+
+cmd = ['python', '-m', 'da', 'orig.da']
+
+
+
+
+proc = subprocess.run(cmd, stdout=subprocess.PIPE)
+output = str(proc.stdout).strip()[13:-3]
+print("Print output returned by main.da: ")
+# print(output)
+print(json.loads(output))
+
+def main():
+    n = 10
+    # p a l             <-- 3 to 5
+    # message loss 0.5  <-- upto
+    # message delay 5   <-- upto
+    # wait time -       <-- upto
+    # tp -              <-- upto
+    # tl -              <-- upto
+
+    cmd = ['python', '-m', 'da', 'preempt_orig.da']
+    
+    cmd = ['python', '-m', 'da', 'orig.da']
