@@ -1,5 +1,5 @@
 import sys
-from random import randint
+from random import randint, uniform
 from time import sleep
 from verify import Verifier
 import controller
@@ -20,7 +20,7 @@ class Proposer(process, controller.Controllee):
     def to_consent():
         n = (0, self) if n == None else (n[0]+1, self)  # pick a prop num
         if is_sent(r): 
-            sleep(randint(0, d))
+            sleep(round(uniform(0.0, d), 1))
             send(('prepare', n), to= majority)
         if await(len(setof(a, received(('respond', _n, _), from_ =a)))
                  > len(acceptors)/2):
@@ -29,7 +29,7 @@ class Proposer(process, controller.Controllee):
                       or {randint(1,100)})  # any value, pick in 1..100
             responded = setof(a, received(('respond', _n, _), from_ =a))
             if is_sent(r): 
-                sleep(randint(0, d))
+                sleep(round(uniform(0.0, d), 1))
                 send(('accept', n, v), to= responded)
             debug('### chose', n, v)
         elif some(received(('preempted', n2)), has= n2 > n):            
@@ -56,14 +56,13 @@ class Acceptor(process, controller.Controllee):
             maxprop = anyof(setof((n, v), sent(('accepted', n, v)),
                                n==max(setof(n, sent(('accepted', n, _))))))
             if is_sent(r): 
-                sleep(randint(0, d))
+                sleep(round(uniform(0.0, d), 1))
                 send(('respond', n, maxprop), to =p)
         else:
             msg_set = setof(n2, sent(('respond', n2, _)))|setof(n3, sent(('accepted', n3, _)))
-            # output("Printing the message set", msg_set)
             maxprop = max(msg_set)
             if is_sent(r): 
-                sleep(randint(0, d))
+                sleep(round(uniform(0.0, d), 1))
                 send(('preempted', maxprop), to=p)
 
     def receive(msg= ('accept', n, v), from_=p):
@@ -100,9 +99,9 @@ class Learner(process):
     def run():
         learn()
         output('terminating')
-        if is_sent(r): 
-            sleep(randint(0, d))
-            send(('learned', ), to=nodeof(self))
+        # if is_sent(r): 
+        sleep(round(uniform(0.0, d), 1))
+        send(('learned', ), to=nodeof(self))
 
 
 def main():
@@ -111,8 +110,8 @@ def main():
     nlearners = int(sys.argv[3]) if len(sys.argv) > 3 else 3
     n = int(sys.argv[4]) if len(sys.argv) > 4 else 1
     r = float(sys.argv[5]) if len(sys.argv) > 5 else 0.0
-    d = int(sys.argv[6]) if len(sys.argv) > 6 else 0
-    w = int(sys.argv[7]) if len(sys.argv) > 7 else TIMEOUT
+    d = float(sys.argv[6]) if len(sys.argv) > 6 else 0.0
+    w = float(sys.argv[7]) if len(sys.argv) > 7 else 0.0
     tp = int(sys.argv[8]) if len(sys.argv) > 8 else max(d, TIMEOUT)
     tl = int(sys.argv[9]) if len(sys.argv) > 9 else max(d, TIMEOUT)
 
@@ -130,7 +129,7 @@ def main():
 
         await(each(l in learners, has=received(('learned',), from_=l)))
         output('done')
-        send(('done',), to= (acceptors|proposers))
+        send(('done',), to= (verifiers|acceptors|proposers))
 
 # This is an executable specification of the algorithm described in
 # Lamport, L. (2001).  Paxos Made Simple.  ACM SIGACT News 
