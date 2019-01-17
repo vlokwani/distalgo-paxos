@@ -18,12 +18,10 @@ class Verifier(process):    # Class to check for correctness verification
         is_correct(value)
     
     def run():
-
-        output(setof(a, received(('accepted', _, _, _), from_=a)))
-
+        # output(setof(a, received(('accepted', _, _, _), from_=a)))
         await(len(
             setof(l, received(('learnt', _, _, a), from_=l))
-        ) >= n_learners)        
+        ) >= n_learners or received(('done', )))        
                                 # This will not allow the program to terminate 
                                 # if we don't receive one 'learnt' message
                                 # from each learner that we'll have in the system
@@ -34,5 +32,7 @@ class Verifier(process):    # Class to check for correctness verification
             print("The value {} was learnt by all learners successfully!!!".format(
                 learnt_value
             ))
+        elif learnt_value == None:
+            print("No value learned")
         else:
             raise Exception("Safety Violated!!! Learners learnt different values")
