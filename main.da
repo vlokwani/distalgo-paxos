@@ -1,28 +1,177 @@
 import subprocess
-import json
+import json, sys, prettytable
+import re
+from prettytable import PrettyTable
+import pandas as pd
 
-cmd = ['python', '-m', 'da', 'main.da']
+TIMEOUT = 1
+PLOT_METRICS = False
 
-cmd = ['python', '-m', 'da', 'orig.da']
+def process_output(output):
+    print("Printing output: ", output)
+    value, metrics = output.splitlines()
+    value_learned = re.match("The value (\d+) was learnt by all learners successfully!!!", value)
+    if not value_learned:
+        value_not_learned = re.match("No value learned", value)
+        value = value_not_learned.group() if value_not_learned else None
+    else:
+        value = value_learned.group(1) if value_learned else None
+    metrics = re.match("###OUTPUT: (.+)", metrics).group(1)
+    return value, metrics
+
+def get_arguments():
+    p = sys.argv[1] if len(sys.argv) > 1 else '5'
+    a = sys.argv[2] if len(sys.argv) > 2 else '3'
+    l = sys.argv[3] if len(sys.argv) > 3 else '3'
+    n = sys.argv[4] if len(sys.argv) > 4 else '1'
+    r = sys.argv[5] if len(sys.argv) > 5 else '0.0'
+    d = sys.argv[6] if len(sys.argv) > 6 else '0.0'
+    w = sys.argv[7] if len(sys.argv) > 7 else '0.0'
+    tp = sys.argv[8] if len(sys.argv) > 8 else str(max(float(d), TIMEOUT))
+    tl = sys.argv[9] if len(sys.argv) > 9 else str(max(float(d), TIMEOUT))
+
+    args = [p, a, l, '1', r, d, w, tp, tl]
+    return args, int(n)
+
+def run_program(prog, args):
+    cmd = ['python3', '-m', 'da', prog ] + args
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE)
+    output = proc.stdout
+    return output.decode('utf-8')
+
+def write_metrics(f, metrics):
+    p = PrettyTable()
+    p.field_names = metrics[0]
+
+    for met in metrics[1:]:
+        p.add_row(met)
+    
+    f.write(str(p))
+    f.write("\n\n")
+    return p
+
+def print_metrics(p):
+    print("+----------------+----------------------+-----------------------+-----------------------+")
+    print()
+    print(p)
+    print()
+    print("+----------------+----------------------+-----------------------+-----------------------+")
 
 
+def mean(numbers):
+    return float(sum(numbers)) / max(len(numbers), 1)
 
 
-proc = subprocess.run(cmd, stdout=subprocess.PIPE)
-output = str(proc.stdout).strip()[13:-3]
-print("Print output returned by main.da: ")
-# print(output)
-print(json.loads(output))
+def get_average_and_std(metrics):
+    import statistics as stat
+    avg, std = [], []
+
+    for numbers in zip(*metrics[1:]):
+        avg.append(mean(list(map(float, numbers))))
+        std.append(stat.stdev(list(map(float, numbers))))        
+
+    metrics.append(['Avg'] + avg[1:])
+    metrics.append(['Std. Deviation'] + std[1:])
+
+def add_metrics_to_table(table, metrics, index):
+    table.append([
+        index,
+        metrics['All']['Total_user_time'], 
+        metrics['All']['Total_system_time'], 
+        metrics['Wallclock_time']
+    ])
+
+def calculate_metrics(program, args, table, index):
+    output = run_program(program, args)
+    value, metrics = process_output(output)
+    metrics = json.loads(metrics)
+    add_metrics_to_table(table, metrics, index)
+    return value
+
+def plot_metrics(outfile, preempt):
+    pass
+
+def write_header(args, met_f):
+    met_f.write("For command line arguments: {}\n\n".format(
+                str(args)))
 
 def main():
-    n = 10
-    # p a l             <-- 3 to 5
-    # message loss 0.5  <-- upto
-    # message delay 5   <-- upto
-    # wait time -       <-- upto
-    # tp -              <-- upto
-    # tl -              <-- upto
+    preempt_orig_table = [['Runs', 'Total User Time', 'Total System Time', 'Wallclock Time']]
+    orig_table = [['Runs', 'Total User Time', 'Total System Time', 'Wallclock Time']]
 
-    cmd = ['python', '-m', 'da', 'preempt_orig.da']
-    
-    cmd = ['python', '-m', 'da', 'orig.da']
+    if not PLOT_METRICS:
+        args, n = get_arguments()
+        met_f = open('metrics.txt', 'w')
+
+        for i in range(n):
+            value = calculate_metrics('preempt_orig.da', args, preempt_orig_table, i)
+            met_f.write("Value learned by program preemption_orig.da in repetition {}: {}\n\n".format(i, value))
+
+        if n > 1: get_average_and_std(preempt_orig_table)
+        print_metrics(write_metrics(met_f, preempt_orig_table))    
+        
+        for i in range(n):
+            value = calculate_metrics('orig.da', args, orig_table, i)
+            met_f.write("Value learned by program orig.da in repetition {}: {}\n\n".format(i, value))
+
+        if n > 1: get_average_and_std(orig_table) 
+        print_metrics(write_metrics(met_f, orig_table))
+    else:
+        met_f = open('performance_testing.txt', 'w')
+        columns=['Message Loss Rate', 'Message Delay Rate', 'Wait Time', 'Runs', 'Total User Time', 'Total System Time', 'Wallclock Time', 'prog']
+        n = 10
+        p, a, l, tp, tl = '3 3 3 10 10'.split()
+        message_loss_rates = '0 0.05 0.1 0.15'.split()
+        message_delays = '0, 0.5, 1, 1.5, 2'.split(', ')
+        wait_times = '0, 0.1, 0.2, 0.3, 0.4'.split(', ')
+        variable_args, df = [], pd.DataFrame(columns=columns)
+
+        for loss_rate in message_loss_rates:
+            variable_args.append((
+                p, a, l, '1',
+                loss_rate, 
+                '0.0', 
+                '0.0'
+            ))
+
+        for delay in message_delays:
+            variable_args.append((
+                p, a, l, '1',
+                '0.0', 
+                delay, 
+                '0.0'
+            ))
+
+        for wait_time in wait_times:
+            variable_args.append((
+                p, a, l, '1',
+                '0.0', 
+                '0.0', 
+                wait_time
+            ))
+
+        for v_arg in variable_args:
+            table = [['Runs', 'Total User Time', 'Total System Time', 'Wallclock Time']]
+            args = list(v_arg) + [tp, tl]
+            write_header(args, met_f)
+            for i in range(n):
+                value = calculate_metrics('preempt_orig.da', args, table, i)
+                met_f.write("Value learned by program preemption_orig.da in repetition {}: {}\n\n".format(i, value))
+                df = df.append(pd.DataFrame([[loss_rate, delay, wait_time] + table[-1] + ['preempt']], columns=columns))
+            
+            df.to_csv('final_metrics.csv')
+            get_average_and_std(table)
+            print_metrics(write_metrics(met_f, table))
+
+            table = [['Runs', 'Total User Time', 'Total System Time', 'Wallclock Time']]
+            for i in range(n):
+                value = calculate_metrics('orig.da', args, table, i)
+                met_f.write("Value learned by program orig.da in repetition {}: {}\n\n".format(i, value))
+                df = df.append(pd.DataFrame([[loss_rate, delay, wait_time] + table[-1] + ['orig']], columns=columns))
+
+            df.to_csv('final_metrics.csv')
+            get_average_and_std(table)
+            print_metrics(write_metrics(met_f, table))
+
+        df.to_csv('final_metrics.csv')
+    met_f.close()
